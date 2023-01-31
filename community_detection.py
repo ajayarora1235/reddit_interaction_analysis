@@ -67,7 +67,6 @@ class CommunityDetection:
   def subreddit_cnt_preprocessing():
     all_subreddits = list(set(self.subreddit_counts.subreddit.unique().tolist()))
     starting_ind = len(a)
-    # all_subreddits = list(set(interactions_comments.subreddit.unique().tolist()) | set(interactions_submissions.subreddit.unique().tolist()))
     subreddit_dict = {}
     for i in range(len(all_subreddits)):
         subreddit_dict[all_subreddits[i]] = starting_ind + i
@@ -134,7 +133,6 @@ class CommunityDetection:
       people = [x for x in final_z[comm_index] if x < len(a)]
       num_people = len(people)
       print("\nsubreddits in comm " + str(comm_index) + " (" + str(num_people) + " people, "  + str(len(final_z[comm_index]) - num_people) + " reddits)")
-      #print(conservative_counts_comm[conservative_counts_comm["comm #"] == comm_index]["post_count"][0])
       print(str(round(conservative_counts_comm[conservative_counts_comm["comm #"] == comm_index]["post_count"].tolist()[0]/num_people, 2)) + " conservative comments per person in community")
       cons_counts.append(conservative_counts_comm[conservative_counts_comm["comm #"] == comm_index]["post_count"].tolist()[0])
             
