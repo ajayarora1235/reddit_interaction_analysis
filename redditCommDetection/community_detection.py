@@ -8,6 +8,7 @@ from collections import defaultdict
 from scipy.sparse import csr_matrix
 import networkx.algorithms.community as nx_comm
 import community as community_louvain
+from utils import *
 
 class CommunityDetection:
   '''
@@ -21,20 +22,12 @@ class CommunityDetection:
     self.authors = pd.read_csv(authors_csv)
     self.intx = pd.read_csv(intx_csv) 
     self.subreddit_counts = pd.read_csv(subreddit_posts_csv)
-    self.author_dict = self.create_author_dict()
-
-
-  def create_author_dict():
-    a = list(self.authors['author'])
-    author_dict = {}
-    for i in range(len(a)):
-      author_dict[a[i]] = i
-    return author_dict
+    self.author_dict = utils.create_author_dict(self.authors)
 
   '''
   returns a dataframe returning interaction counts of author pairs
   '''
-  def intx_preprocessing():
+  def intx_preprocessing(self):
     intx_grouped = self.intx.groupby(['link_id','subreddit'])['author']
       .apply(lambda x: ','.join(x))
       .reset_index()
@@ -57,14 +50,14 @@ class CommunityDetection:
               col[index] = author_dict[pair[0]]
           value[index] = 1
 
-    final_df = pd.DataFrame({'parent': rowVals, 'child': col, 'freq': value})
-      .groupby(['parent','child']).size().reset_index()
+    final_df = pd.DataFrame({'parent_index': rowVals, 'child_index': col, 'freq': value})
+      .groupby(['parent_index','child_index']).size().reset_index()
     final_df.rename(columns = {0: 'frequency'}, inplace = True)
     final_df = final_df.iloc[1: , :]
 
     return final_df
 
-  def subreddit_cnt_preprocessing():
+  def subreddit_cnt_preprocessing(self):
     all_subreddits = list(set(self.subreddit_counts.subreddit.unique().tolist()))
     starting_ind = len(a)
     subreddit_dict = {}
@@ -77,62 +70,27 @@ class CommunityDetection:
 
     activity_intx = comment_counts[['author_index', 'subreddit_index', 'post_count']]
 
-    return activity_intx
+    return activity_intx, comment_counts, all_subreddits
 
-  def louvain_detection():
-    rowLov = np.concatenate([rowVals,activity_intx.author_index.tolist()])
-    colLov = np.concatenate([col, activity_intx.subreddit_index.tolist()])
-    dataLov = np.concatenate([value, activity_intx.post_count.tolist()])
+  def community_analysis(self):
+    dim = len(a) + len(all_subreddits)
+    freq_df = self.intx_preprocessing()
+    comms, _, G = utils.louvain_detection(freq_df, dim, res=1.6, activity_intx)
+    year_one_cluster_list, _, _, _ = utils.louvain_postprocessing(comms, comm_year_two=None, dim)
 
-    print(rowLov.shape)
-    print(colLov.shape)
-    print(dataLov.shape)
-
-    matr = csr_matrix((dataLov, (rowLov, colLov)), shape=(len(author_list)+len(all_subreddits), len(author_list)+len(all_subreddits)))
-    G = nx.from_scipy_sparse_matrix(matr)
-    G.remove_nodes_from(list(nx.isolates(G)))
-    z = nx_comm.louvain_communities(G, resolution=1)
-
-    single_sets = []
-    multisize_sets = 0
-    multisize_size = 0
-    final_z = []
-    for i in z:
-        if len(i) < 2:
-            single_sets.append(list(i)[0])
-        else:
-            multisize_sets += 1
-            multisize_size += len(i)
-            final_z.append(i)
-
-    print(multisize_sets, multisize_size)
-    #final_z, single_sets
-
-  def clustering_postprocessing():
-    partition = {}
-    for comm_index in range(len(final_z)):
-        for ind in final_z[comm_index]:
-            partition[ind] = comm_index
-            
-    year_one_cluster_list = [-1 for x in range(len(a) + len(all_subreddits))]
-    for comm_index in range(len(final_z)):
-        for ind in final_z[comm_index]:
-            year_one_cluster_list[ind] = comm_index
-
-  def community_analysis():
     conservative_counts = comment_counts[comment_counts['subreddit'] == 'Conservative']
-    author_df = pd.DataFrame(data={'author': a + all_subreddits, "author_index": range(len(a) + len(all_subreddits)), "comm #": year_one_cluster_list})
+    author_df = pd.DataFrame(data={'author': a + all_subreddits, "author_index": range(dim), "comm #": year_one_cluster_list})
     conservative_counts_two = conservative_counts.merge(author_df, on='author_index')
 
     conservative_counts_comm = conservative_counts_two.groupby(['comm #'])["post_count"].sum().reset_index()
 
     cons_counts = []
 
-    for comm_index in range(len(final_z)):
-      new_G = G.subgraph(final_z[comm_index])
-      people = [x for x in final_z[comm_index] if x < len(a)]
+    for comm_index in range(len(comms)):
+      new_G = G.subgraph(comms[comm_index])
+      people = [x for x in comms[comm_index] if x < len(a)]
       num_people = len(people)
-      print("\nsubreddits in comm " + str(comm_index) + " (" + str(num_people) + " people, "  + str(len(final_z[comm_index]) - num_people) + " reddits)")
+      print("\nsubreddits in comm " + str(comm_index) + " (" + str(num_people) + " people, "  + str(len(comms[comm_index]) - num_people) + " reddits)")
       print(str(round(conservative_counts_comm[conservative_counts_comm["comm #"] == comm_index]["post_count"].tolist()[0]/num_people, 2)) + " conservative comments per person in community")
       cons_counts.append(conservative_counts_comm[conservative_counts_comm["comm #"] == comm_index]["post_count"].tolist()[0])
             
@@ -144,7 +102,7 @@ class CommunityDetection:
       pp_total_deg = 0 #only between people
       rp_total_deg = 0
       
-      for ind in final_z[comm_index]:
+      for ind in comms[comm_index]:
         total_deg += G.degree(ind, "weight")
         if (ind > len(a)):
           rp_total_deg += G.degree(ind, "weight")

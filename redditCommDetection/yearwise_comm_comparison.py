@@ -13,18 +13,18 @@ import altair as alt
 
 # one thing to compare activity in various subreddits between two years
 class ActivityComparison:
-  def __init__():
+  def __init__(self, author_csv, intx_csv, subreddit_posts_csv, subreddit_comments_csv):
     #create adjacency matrix
-    author_list = pd.read_csv('authors_big.csv')
-    interactions = pd.read_csv('interactions_cleaned.csv')
-    author_sub_counts = pd.read_csv('author_subreddit_counts_big.csv')
-    comment_sub_counts = pd.read_csv('comment_subreddit_counts.csv')
+    self.author_list = pd.read_csv(author_csv)
+    self.interactions = pd.read_csv(intx_csv)
+    self.author_sub_counts = pd.read_csv(subreddit_posts_csv)
+    self.comment_sub_counts = pd.read_csv(subreddit_comments_csv)
+    self.author_dict = utils.create_author_dict(self.authors)
 
-  def overlap_calculation():
-    political_reddits = ["Conservative", "Republican", "tucker_carlson", "trump", "conservatives", "HillaryForPrison", "ConservativesOnly"]
-    political_subs = author_sub_counts[author_sub_counts["subreddit"].isin(political_reddits)]
+  def overlap_calculation(self, political_reddits):
+    political_subs = self.author_sub_counts[self.author_sub_counts["subreddit"].isin(political_reddits)]
 
-    political_comms = comment_sub_counts[comment_sub_counts["subreddit"].isin(political_reddits)]
+    political_comms = self.comment_sub_counts[self.comment_sub_counts["subreddit"].isin(political_reddits)]
     political_comms = political_comms[political_comms["comment_cnt"] > 1]
 
     political_comms.sort_values(by=['subreddit'], inplace=True)
@@ -45,11 +45,11 @@ class ActivityComparison:
     for ind in range(len(year_one_subs)):
       overlap_matrix[reddit_combs.index(year_one_subs.iloc[[ind]]["subreddits"].tolist()[0])][reddit_combs.index(year_two_subs.iloc[[ind]]["subreddits"].tolist()[0])] += 1
     
-    return overlap_matrix
+    return overlap_matrix, reddit_combs
 
+  def activity_plot(self, political_reddits):
+    overlap_matrix, reddit_combs = self.overlap_calculation(political_reddits)
 
-
-  def activity_plot():
     overlap_df = []
       for x in range(len(reddit_combs)):
         for y in range(len(reddit_combs)):
@@ -94,19 +94,12 @@ class CommunityComparison:
   subreddit_posts_csv: a four column csv containing the author, subreddit, year, and the number of posts
     made by said author in the subreddit ('post_count') for that year
   '''
-  def __init__(self, author_csv, intx_csv, subreddit_posts_csv):
+  def __init__(self, author_csv, intx_posts_csv, intx_comments_csv, subreddit_posts_csv):
     self.authors = pd.read_csv(authors_csv)
     self.intx_posts = pd.read_csv(intx_posts_csv) 
     self.intx_comments = pd.read_csv(intx_comments_csv)
     self.subreddit_counts = pd.read_csv(subreddit_posts_csv)
-    self.author_dict = self.create_author_dict()
-
-  def create_author_dict(self):
-    a = list(self.authors['author'])
-    author_dict = {}
-    for i in range(len(a)):
-      author_dict[a[i]] = i
-    return author_dict
+    self.author_dict = utils.create_author_dict(self.authors)
 
   def intx_preprocessing(self):        
     interactions_one['parent_index'] = interactions_one.apply(lambda row: self.author_dict[row['submissions_author']], axis=1)
@@ -126,44 +119,6 @@ class CommunityComparison:
     year_one_df.rename(columns = {0: 'frequency'}, inplace = True)
     year_two_df = year_two_actions.groupby(['parent_index','child_index']).size().reset_index()
     year_two_df.rename(columns = {0: 'frequency'}, inplace = True)
-
-  def louvain_detection(self, freq_df):
-    row = np.array(freq_df['parent_index'])
-    col = np.array(freq_df['child_index'])
-    data = np.array(freq_df['frequency'])
-    
-    matr = csr_matrix((data, (row, col)), shape=(len(author_list), len(author_list)))
-    G = nx.from_scipy_sparse_matrix(matr, create_using=nx.MultiGraph)
-    z = nx_comm.louvain_communities(G, resolution=1.6)
-    
-    single_sets = []
-    multisize_sets = 0
-    multisize_size = 0
-    final_z = []
-    for i in z:
-      if len(i) < 2:
-        single_sets.append(list(i)[0])
-      else:
-        multisize_sets += 1
-        multisize_size += len(i)
-        final_z.append(i)
-            
-    print(multisize_sets, multisize_size)
-    return final_z, single_sets
-
-  def louvain_postprocessing(self):
-    comm_year_one, single_sets_year_one = louvain_func(year_one_df)
-    comm_year_two, single_sets_year_two = louvain_func(year_two_df)
-
-    year_one_cluster_list = [-1 for x in range(len(a))]
-    year_two_cluster_list = [-1 for x in range(len(a))]
-    for comm_index in range(len(comm_year_one)):
-      for ind in comm_year_one[comm_index]:
-        year_one_cluster_list[ind] = comm_index
-        
-    for comm_index in range(len(comm_year_two)):
-      for ind in comm_year_two[comm_index]:
-        year_two_cluster_list[ind] = comm_index
 
   def community_subreddit_data(comm_segmentation, year, topX=True, exceptions=['AskReddit', 'memes', 'dankmemes', 'Showerthoughts']):
     top_subreddits_by_post = [0 for x in range(len(comm_segmentation))]
@@ -225,31 +180,32 @@ class CommunityComparison:
       
     return interaction_matrix, top_subreddits_by_num_intx
 
-  def community_rankings(self):
-    post_ranking_year_one, user_rankings_year_one, all_subreddits_yr_one = community_subreddit_data(comm_year_one, 2020, topX=False)
-    post_ranking_year_two, user_rankings_year_two, all_subreddits_yr_two = community_subreddit_data(comm_year_two, 2021, topX=False)
-    intx_matrix, intx_subreddit_ranking = community_interaction_data(year_one_actions, 
+  def community_rankings(self, comm_year_one, comm_year_two):
+    post_ranking_year_one, user_rankings_year_one, all_subreddits_yr_one = self.community_subreddit_data(comm_year_one, 2020, topX=False)
+    post_ranking_year_two, user_rankings_year_two, all_subreddits_yr_two = self.community_subreddit_data(comm_year_two, 2021, topX=False)
+    intx_matrix, intx_subreddit_ranking = self.community_interaction_data(year_one_actions, 
                                                                     year_one_cluster_dict, 
                                                                     2020, 
                                                                     len(comm_year_one),
                                                                     topX=False)
-    intx_matrix_two, intx_subreddit_ranking_two = community_interaction_data(year_two_actions, 
+    intx_matrix_two, intx_subreddit_ranking_two = self.community_interaction_data(year_two_actions, 
                                                                             year_two_cluster_dict, 
                                                                             2021, 
                                                                             len(comm_year_two),
                                                                             topX=False)
 
-  def alt_community_rankings(self):
-    _, user_rankings_year_one, all_subreddits = community_subreddit_data(comm_year_one, 2020)
-    _, user_rankings_year_two, all_subreddits = community_subreddit_data(comm_year_two, 2021)
-    intx_matrix, intx_subreddit_ranking = community_interaction_data(year_one_actions, 
+  def alt_community_rankings(self, comm_year_one, comm_year_two):
+    _, user_rankings_year_one, all_subreddits = self.community_subreddit_data(comm_year_one, 2020)
+    _, user_rankings_year_two, all_subreddits = self.community_subreddit_data(comm_year_two, 2021)
+    intx_matrix, intx_subreddit_ranking = self.community_interaction_data(year_one_actions, 
                                                                     year_one_cluster_dict, 
                                                                     2020, 
                                                                     len(comm_year_one),
                                                                     topX=True)
+    return user_rankings_year_one, user_rankings_year_two, all_subreddits, intx_matrix, intx_subreddit_ranking
 
 
-  def get_unique_subreddits(self):
+  def get_unique_subreddits(self, all_subreddits, user_rankings_year_one, intx_subreddit_ranking):
     cluster_unique_subreddits_year_one = [[] for x in range(len(comm_year_one))]
     for reddit in all_subreddits:
       i = 0
@@ -279,8 +235,13 @@ class CommunityComparison:
             for ind in yes:
               cluster_unique_subreddits_year_one[ind].append(reddit)
           i += 1
+    return cluster_unique_subreddits_year_one
 
   def yearwise_heatmap(self):
+    #get all data prepared
+    
+
+
     #subreddit heat map
     overlap_matrix = np.zeros((len(comm_year_one), len(comm_year_two)))
     print(len(comm_year_one), len(comm_year_two))
