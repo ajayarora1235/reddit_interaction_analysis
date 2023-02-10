@@ -119,8 +119,9 @@ class CommunityComparison:
     year_one_df.rename(columns = {0: 'frequency'}, inplace = True)
     year_two_df = year_two_actions.groupby(['parent_index','child_index']).size().reset_index()
     year_two_df.rename(columns = {0: 'frequency'}, inplace = True)
+    return year_one_df, year_two_df
 
-  def community_subreddit_data(comm_segmentation, year, topX=True, exceptions=['AskReddit', 'memes', 'dankmemes', 'Showerthoughts']):
+  def community_subreddit_data(self, comm_segmentation, year, topX=True, exceptions=['AskReddit', 'memes', 'dankmemes', 'Showerthoughts']):
     top_subreddits_by_post = [0 for x in range(len(comm_segmentation))]
     top_subreddits_by_active_users = [0 for x in range(len(comm_segmentation))]
     
@@ -148,7 +149,7 @@ class CommunityComparison:
         
     return top_subreddits_by_post, top_subreddits_by_active_users, all_subreddits
 
-  def community_interaction_data(actions, comm_dict, year, num_clusters, topX=True, exceptions=[]):
+  def community_interaction_data(self, actions, comm_dict, year, num_clusters, topX=True, exceptions=[]):
     parent_clusters = pd.DataFrame(list(comm_dict.items()), columns = ['parent_index', 'parent_cluster'])
     child_clusters = pd.DataFrame(list(comm_dict.items()), columns = ['child_index', 'child_cluster'])
     
@@ -181,20 +182,6 @@ class CommunityComparison:
     return interaction_matrix, top_subreddits_by_num_intx
 
   def community_rankings(self, comm_year_one, comm_year_two):
-    post_ranking_year_one, user_rankings_year_one, all_subreddits_yr_one = self.community_subreddit_data(comm_year_one, 2020, topX=False)
-    post_ranking_year_two, user_rankings_year_two, all_subreddits_yr_two = self.community_subreddit_data(comm_year_two, 2021, topX=False)
-    intx_matrix, intx_subreddit_ranking = self.community_interaction_data(year_one_actions, 
-                                                                    year_one_cluster_dict, 
-                                                                    2020, 
-                                                                    len(comm_year_one),
-                                                                    topX=False)
-    intx_matrix_two, intx_subreddit_ranking_two = self.community_interaction_data(year_two_actions, 
-                                                                            year_two_cluster_dict, 
-                                                                            2021, 
-                                                                            len(comm_year_two),
-                                                                            topX=False)
-
-  def alt_community_rankings(self, comm_year_one, comm_year_two):
     _, user_rankings_year_one, all_subreddits = self.community_subreddit_data(comm_year_one, 2020)
     _, user_rankings_year_two, all_subreddits = self.community_subreddit_data(comm_year_two, 2021)
     intx_matrix, intx_subreddit_ranking = self.community_interaction_data(year_one_actions, 
@@ -205,11 +192,11 @@ class CommunityComparison:
     return user_rankings_year_one, user_rankings_year_two, all_subreddits, intx_matrix, intx_subreddit_ranking
 
 
-  def get_unique_subreddits(self, all_subreddits, user_rankings_year_one, intx_subreddit_ranking):
-    cluster_unique_subreddits_year_one = [[] for x in range(len(comm_year_one))]
+  def get_unique_subreddits(self, all_subreddits, user_rankings, intx_subreddit_ranking, num_clusters):
+    cluster_unique_subreddits = [[] for x in range(num_clusters)] #len(comm_year_one)
     for reddit in all_subreddits:
       i = 0
-      for ranking in [user_rankings_year_one, intx_subreddit_ranking]:
+      for ranking in [user_rankings, intx_subreddit_ranking]:
         amt_list = []
         for amt_dict in ranking:
           if reddit in amt_dict:
@@ -233,13 +220,18 @@ class CommunityComparison:
             #print(amt_list)
             #print(str(num_nonzero) + " comms with subreddit.")
             for ind in yes:
-              cluster_unique_subreddits_year_one[ind].append(reddit)
+              cluster_unique_subreddits[ind].append(reddit)
           i += 1
-    return cluster_unique_subreddits_year_one
+    return cluster_unique_subreddits
 
   def yearwise_heatmap(self):
     #get all data prepared
-    
+    year_one_df, year_two_df = self.intx_preprocessing()
+    dim = len(self.author_list)
+    comms_year_one, _, G_one = utils.louvain_detection(year_one_df, dim, res=1.6)
+    comms_year_two, _, G_two = utils.louvain_detection(year_two_df, dim, res=1.6)
+    year_one_cluster_list, _, _, _ = utils.louvain_postprocessing(comms, comm_year_two=None, dim)
+
 
 
     #subreddit heat map

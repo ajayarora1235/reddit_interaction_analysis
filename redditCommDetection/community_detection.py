@@ -73,8 +73,9 @@ class CommunityDetection:
     return activity_intx, comment_counts, all_subreddits
 
   def community_analysis(self):
-    dim = len(a) + len(all_subreddits)
     freq_df = self.intx_preprocessing()
+    activity_intx, comment_counts, all_subreddits = self.subreddit_cnt_preprocessing()
+    dim = len(a) + len(all_subreddits)
     comms, _, G = utils.louvain_detection(freq_df, dim, res=1.6, activity_intx)
     year_one_cluster_list, _, _, _ = utils.louvain_postprocessing(comms, comm_year_two=None, dim)
 
